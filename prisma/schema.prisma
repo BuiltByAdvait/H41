@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  STUDENT
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  FULL
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  CANCELLED
+  WAITLISTED
+  ATTENDED
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  studentId     String   @unique
+  department    String?
+  academicYear  String?
+  role          UserRole @default(STUDENT)
+  accountStatus String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  createdEvents       Event[]        @relation("EventCreator")
+  registrations       Registration[]
+  notifications       Notification[]
+  feedback            Feedback[]
+  recordedAttendances Attendance[]   @relation("AttendanceRecorder")
+}
+
+model Event {
+  id                   String      @id @default(uuid())
+  title                String
+  slug                 String      @unique
+  description          String
+  category             String?
+  venue                String?
+  startTime            DateTime
+  endTime              DateTime
+  registrationDeadline DateTime
+  capacity             Int?
+  eligibility          String?
+  organizer            String?
+  imageUrl             String?
+  status               EventStatus @default(DRAFT)
+  creatorId            String
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  // Relations
+  creator       User           @relation("EventCreator", fields: [creatorId], references: [id])
+  registrations Registration[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  attendances   Attendance[]   @relation("AttendanceEvent")
+  feedback      Feedback[]
+}
+
+model Registration {
+  id               String             @id @default(uuid())
+  confirmationCode String             @unique
+  status           RegistrationStatus @default(CONFIRMED)
+  registeredAt     DateTime           @default(now())
+  cancelledAt      DateTime?
+
+  studentId String
+  eventId   String
+
+  // Relations
+  student    User        @relation(fields: [studentId], references: [id])
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  attendance Attendance?
+  feedback   Feedback?
+
+  @@unique([studentId, eventId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String
+  description String?
+  userId      String
+  eventId     String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  event Event? @relation(fields: [eventId], references: [id])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  title      String
+  message    String
+  readStatus Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  studentId String
+  eventId   String?
+
+  // Relations
+  student User   @relation(fields: [studentId], references: [id])
+  event   Event? @relation(fields: [eventId], references: [id])
+}
+
+model Attendance {
+  id          String   @id @default(uuid())
+  status      String   @default("PRESENT")
+  checkedInAt DateTime @default(now())
+
+  registrationId String
+  eventId        String
+  checkedInById  String?
+
+  // Relations
+  registration Registration @relation(fields: [registrationId], references: [id])
+  event        Event?       @relation("AttendanceEvent", fields: [eventId], references: [id])
+  checkedInBy  User?        @relation("AttendanceRecorder", fields: [checkedInById], references: [id], onDelete: SetNull)
+
+  @@unique([registrationId])
+}
+
+model Feedback {
+  id             String   @id @default(uuid())
+  rating         Int
+  comment        String?
+  submittedAt    DateTime @default(now())
+  studentId      String
+  eventId        String
+  registrationId String   @unique
+
+  student      User         @relation(fields: [studentId], references: [id])
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+}
